@@ -45,6 +45,7 @@ This command will open your default web browser and display the Streamlit app.
 ## SnapShoot's
 ![Image One](imageone.jpg)
 ![Image Two](imagetwo.jpg)
+![Image Three](imagethree.jpg)
 
 ### streamlit or SpeechRecognition not found
 Ensure that you have activated the virtual environment and installed the packages correctly. Verify installed packages with:
