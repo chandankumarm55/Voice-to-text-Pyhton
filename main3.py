@@ -2,29 +2,82 @@ import streamlit as st
 import speech_recognition as sr
 import tempfile
 import os
+import sounddevice as sd
+import numpy as np
+import io
+import wave
+import time
 
 # Initialize recognizer
 r = sr.Recognizer()
 
+# Function to save numpy array to a WAV file
+def save_wav(file_stream, audio_data, sample_rate):
+    with wave.open(file_stream, 'wb') as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(audio_data)
+
+# Function to capture audio using sounddevice
 def capture_audio(lang):
     transcription = ""
+    audio_data = None
     try:
-        with sr.Microphone() as source:
-            st.write("Calibrating for ambient noise... Please wait.")
-            r.adjust_for_ambient_noise(source, duration=2)
-            st.write("Speak now...")
-            audio_data = r.listen(source, timeout=5)  # Increase timeout if necessary
-            st.write("Processing...")
-            transcription = r.recognize_google(audio_data, language=lang)
-            st.session_state.transcription = transcription
-            return audio_data
+        # Recording settings
+        sample_rate = 44100  # Sample rate for recording
+        buffer_duration = 1  # Duration of buffer recording in seconds
+        silence_threshold = 500  # Silence detection threshold
+        silence_duration = 2  # Duration to wait for silence in seconds
+
+        st.write("Calibrating for ambient noise... Please wait.")
+        st.write("Speak now...")
+
+        # Record audio
+        with sd.InputStream(samplerate=sample_rate, channels=1, dtype='int16') as stream:
+            st.write("Listening...")
+            audio_chunks = []
+            silence_start_time = time.time()
+            
+            while True:
+                # Read audio data
+                chunk, overflowed = stream.read(int(sample_rate * buffer_duration))
+                audio_chunks.append(chunk)
+                audio_data = np.concatenate(audio_chunks)
+                
+                # Check if the audio level is below a threshold (indicating silence)
+                volume = np.max(np.abs(chunk))
+                if volume < silence_threshold:
+                    if time.time() - silence_start_time > silence_duration:
+                        st.write("Processing...")
+                        break
+                else:
+                    silence_start_time = time.time()
+
+            # Convert numpy array to audio file-like object
+            audio_file = io.BytesIO()
+            save_wav(audio_file, audio_data, sample_rate)
+            audio_file.seek(0)
+            
+            # Process audio data
+            with sr.AudioFile(audio_file) as audio_source:
+                audio_data = r.record(audio_source)
+                try:
+                    transcription = r.recognize_google(audio_data, language=lang)
+                    st.session_state.transcription = transcription
+                except sr.UnknownValueError:
+                    # Continue recording if unable to recognize
+                    pass
+                except sr.RequestError as e:
+                    st.session_state.transcription = f"Could not request results; {e}"
+
     except sr.WaitTimeoutError:
         st.session_state.transcription = "No speech detected, please try again."
     except sr.UnknownValueError:
         st.session_state.transcription = "Could not understand audio."
     except sr.RequestError as e:
         st.session_state.transcription = f"Could not request results; {e}"
-    return None
+    return audio_file
 
 def display_transcription():
     if "transcription" in st.session_state:
@@ -67,20 +120,23 @@ def main():
         "Nepali": "ne-NP"
     }
 
-    audio_data = None
-
     if st.button("Start Recording", key="record"):
         st.session_state.transcription = ""
+        st.session_state.audio_data = None
         with st.spinner("Recording and processing..."):
-            audio_data = capture_audio(lang_dict[lang])
-
+            st.write("Recording started...")
+            audio_file = capture_audio(lang_dict[lang])
+            st.session_state.audio_data = audio_file
+            st.write("Recording stopped.")
+        
     display_transcription()
 
-    if audio_data is not None:
+    if "audio_data" in st.session_state and st.session_state.audio_data is not None:
         try:
             # Save audio to a temporary file for playback
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio_file:
-                temp_audio_file.write(audio_data.get_wav_data())
+                temp_audio_file.close()  # Close the file to ensure it's properly saved
+                save_wav(temp_audio_file.name, st.session_state.audio_data.getvalue(), 44100)
                 temp_audio_path = temp_audio_file.name
 
             st.audio(temp_audio_path)  # Play the audio file
