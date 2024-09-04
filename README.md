@@ -32,7 +32,7 @@ source venv/bin/activate
 ### 3. Install Required Packages
 Install the necessary Python packages using pip:
 ```bash
-pip install streamlit SpeechRecognition
+pip install streamlit SpeechRecognition tempfile pydub  pyaudio
 ```
 
 ### 4. Run the Streamlit Application
@@ -42,7 +42,9 @@ streamlit run main3.py
 ```
 This command will open your default web browser and display the Streamlit app.
 
-## Troubleshooting
+## SnapShoot's
+![Image One](imageone.jpg)
+![Image Two](imagetwo.jpg)
 
 ### streamlit or SpeechRecognition not found
 Ensure that you have activated the virtual environment and installed the packages correctly. Verify installed packages with:
