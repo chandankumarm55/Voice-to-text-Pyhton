@@ -2,11 +2,13 @@ import streamlit as st
 import speech_recognition as sr
 import tempfile
 import os
-import sounddevice as sd
-import numpy as np
 import io
 import wave
 import time
+from pydub import AudioSegment
+from pydub.playback import play
+import pyaudio
+import numpy as np
 
 # Initialize recognizer
 r = sr.Recognizer()
@@ -19,7 +21,7 @@ def save_wav(file_stream, audio_data, sample_rate):
         wf.setframerate(sample_rate)
         wf.writeframes(audio_data)
 
-# Function to capture audio using sounddevice
+# Function to capture audio using pyaudio and pydub
 def capture_audio(lang):
     transcription = ""
     audio_data = None
@@ -27,49 +29,63 @@ def capture_audio(lang):
         # Recording settings
         sample_rate = 44100  # Sample rate for recording
         buffer_duration = 1  # Duration of buffer recording in seconds
-        silence_threshold = 500  # Silence detection threshold
+        silence_threshold = -40  # Silence detection threshold in dBFS
         silence_duration = 2  # Duration to wait for silence in seconds
 
         st.write("Calibrating for ambient noise... Please wait.")
         st.write("Speak now...")
 
-        # Record audio
-        with sd.InputStream(samplerate=sample_rate, channels=1, dtype='int16') as stream:
-            st.write("Listening...")
-            audio_chunks = []
-            silence_start_time = time.time()
-            
-            while True:
-                # Read audio data
-                chunk, overflowed = stream.read(int(sample_rate * buffer_duration))
-                audio_chunks.append(chunk)
-                audio_data = np.concatenate(audio_chunks)
-                
-                # Check if the audio level is below a threshold (indicating silence)
-                volume = np.max(np.abs(chunk))
-                if volume < silence_threshold:
-                    if time.time() - silence_start_time > silence_duration:
-                        st.write("Processing...")
-                        break
-                else:
-                    silence_start_time = time.time()
+        # Initialize PyAudio
+        p = pyaudio.PyAudio()
+        stream = p.open(format=pyaudio.paInt16,
+                        channels=1,
+                        rate=sample_rate,
+                        input=True,
+                        frames_per_buffer=int(sample_rate * buffer_duration))
 
-            # Convert numpy array to audio file-like object
-            audio_file = io.BytesIO()
-            save_wav(audio_file, audio_data, sample_rate)
-            audio_file.seek(0)
+        st.write("Listening...")
+        audio_chunks = []
+        silence_start_time = time.time()
+        
+        while True:
+            # Read audio data
+            chunk = stream.read(int(sample_rate * buffer_duration))
+            audio_chunks.append(chunk)
+            audio_data = b''.join(audio_chunks)
             
-            # Process audio data
-            with sr.AudioFile(audio_file) as audio_source:
-                audio_data = r.record(audio_source)
-                try:
-                    transcription = r.recognize_google(audio_data, language=lang)
-                    st.session_state.transcription = transcription
-                except sr.UnknownValueError:
-                    # Continue recording if unable to recognize
-                    pass
-                except sr.RequestError as e:
-                    st.session_state.transcription = f"Could not request results; {e}"
+            # Convert chunk to AudioSegment
+            audio_segment = AudioSegment.from_raw(io.BytesIO(chunk), sample_width=2, frame_rate=sample_rate, channels=1)
+            
+            # Check if the audio level is below a threshold (indicating silence)
+            volume = audio_segment.dBFS
+            if volume < silence_threshold:
+                if time.time() - silence_start_time > silence_duration:
+                    st.write("Processing...")
+                    break
+            else:
+                silence_start_time = time.time()
+
+        # Stop and close the stream
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+        # Convert audio data to a WAV file-like object
+        audio_file = io.BytesIO()
+        save_wav(audio_file, audio_data, sample_rate)
+        audio_file.seek(0)
+        
+        # Process audio data
+        with sr.AudioFile(audio_file) as audio_source:
+            audio_data = r.record(audio_source)
+            try:
+                transcription = r.recognize_google(audio_data, language=lang)
+                st.session_state.transcription = transcription
+            except sr.UnknownValueError:
+                # Continue recording if unable to recognize
+                pass
+            except sr.RequestError as e:
+                st.session_state.transcription = f"Could not request results; {e}"
 
     except sr.WaitTimeoutError:
         st.session_state.transcription = "No speech detected, please try again."
