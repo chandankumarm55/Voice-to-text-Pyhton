@@ -1,6 +1,6 @@
 streamlit==1.38.0
 speechrecognition==3.8.1
-sounddevice==0.4.6
+pydub==0.25.1
+pyaudio==0.2.12
 numpy>=1.24.0
 setuptools>=60.0
-pydub==0.25.1
