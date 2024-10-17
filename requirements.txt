@@ -1,3 +1,10 @@
 streamlit
+<<<<<<< HEAD
 tempfile
 SpeechRecognition
+=======
+speechrecognition==3.8.1
+pydub==0.25.1
+pyaudio==0.2.12
+numpy>=1.24.0
+>>>>>>> origin/chandan/improved
